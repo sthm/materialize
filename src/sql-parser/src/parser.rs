@@ -46,6 +46,9 @@ const RECURSION_LIMIT: usize = 128;
 /// Maximum allowed size for a batch of statements in bytes: 1MB.
 pub const MAX_STATEMENT_BATCH_SIZE: usize = 1_000_000;
 
+// Maximum allowed identifier length in bytes.
+const MAX_IDENTIFIER_LENGTH: usize = 255;
+
 // Use `Parser::expected` instead, if possible
 macro_rules! parser_err {
     ($parser:expr, $pos:expr, $MSG:expr) => {
@@ -3814,7 +3817,7 @@ impl<'a> Parser<'a> {
         loop {
             if let Some(constraint) = self.parse_optional_table_constraint()? {
                 constraints.push(constraint);
-            } else if let Some(column_name) = self.consume_identifier() {
+            } else if let Some(column_name) = self.consume_identifier()? {
                 let data_type = self.parse_data_type()?;
                 let collation = if self.parse_keyword(COLLATE) {
                     Some(self.parse_item_name()?)
@@ -5332,7 +5335,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a simple one-word identifier (possibly quoted, possibly a keyword)
     fn parse_identifier(&mut self) -> Result<Ident, ParserError> {
-        match self.consume_identifier() {
+        match self.consume_identifier()? {
             Some(id) => {
                 if id.as_str().is_empty() {
                     return parser_err!(
@@ -5341,23 +5344,38 @@ impl<'a> Parser<'a> {
                         "zero-length delimited identifier",
                     );
                 }
+                if id.as_str().len() > MAX_IDENTIFIER_LENGTH {
+                    return parser_err!(
+                        self,
+                        self.peek_pos(),
+                        format!("identifier length exceeds {MAX_IDENTIFIER_LENGTH} chars")
+                    );
+                }
                 Ok(id)
             }
             None => self.expected(self.peek_pos(), "identifier", self.peek_token()),
         }
     }
 
-    fn consume_identifier(&mut self) -> Option<Ident> {
+    fn consume_identifier(&mut self) -> Result<Option<Ident>, ParserError> {
         match self.peek_token() {
             Some(Token::Keyword(kw)) => {
                 self.next_token();
-                Some(kw.into())
+                Ok(Some(kw.into()))
             }
             Some(Token::Ident(id)) => {
+                if id.as_str().len() > MAX_IDENTIFIER_LENGTH {
+                    return parser_err!(
+                        self,
+                        self.peek_pos(),
+                        format!("identifier length exceeds {MAX_IDENTIFIER_LENGTH} chars")
+                    );
+                }
+
                 self.next_token();
-                Some(Ident::new(id))
+                Ok(Some(Ident::new(id)))
             }
-            _ => None,
+            _ => Ok(None),
         }
     }
 
