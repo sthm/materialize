@@ -5213,17 +5213,7 @@ impl<'a> Parser<'a> {
             // (For example, in `FROM t1 JOIN` the `JOIN` will always be parsed as a keyword,
             // not an alias.)
             Some(Token::Keyword(kw)) if after_as || !is_reserved(kw) => Ok(Some(kw.into())),
-            Some(Token::Ident(id)) => {
-                if id.as_str().len() > MAX_IDENTIFIER_LENGTH {
-                    return parser_err!(
-                        self,
-                        self.peek_pos(),
-                        format!("identifier length exceeds {MAX_IDENTIFIER_LENGTH} chars")
-                    );
-                }
-
-                Ok(Some(Ident::new(id)))
-            }
+            Some(Token::Ident(id)) => Ok(Some(Ident::new(id).enforce_max_length(self)?)),
             not_an_ident => {
                 if after_as {
                     return self.expected(
@@ -5354,14 +5344,7 @@ impl<'a> Parser<'a> {
                         "zero-length delimited identifier",
                     );
                 }
-                if id.as_str().len() > MAX_IDENTIFIER_LENGTH {
-                    return parser_err!(
-                        self,
-                        self.peek_pos(),
-                        format!("identifier length exceeds {MAX_IDENTIFIER_LENGTH} chars")
-                    );
-                }
-                Ok(id)
+                id.enforce_max_length(self)
             }
             None => self.expected(self.peek_pos(), "identifier", self.peek_token()),
         }
@@ -5374,16 +5357,9 @@ impl<'a> Parser<'a> {
                 Ok(Some(kw.into()))
             }
             Some(Token::Ident(id)) => {
-                if id.as_str().len() > MAX_IDENTIFIER_LENGTH {
-                    return parser_err!(
-                        self,
-                        self.peek_pos(),
-                        format!("identifier length exceeds {MAX_IDENTIFIER_LENGTH} chars")
-                    );
-                }
-
+                let identifier = Ident::new(id).enforce_max_length(self)?;
                 self.next_token();
-                Ok(Some(Ident::new(id)))
+                Ok(Some(identifier))
             }
             _ => Ok(None),
         }
@@ -7426,5 +7402,19 @@ impl<'a> Parser<'a> {
 impl CheckedRecursion for Parser<'_> {
     fn recursion_guard(&self) -> &RecursionGuard {
         &self.recursion_guard
+    }
+}
+
+impl Ident {
+    fn enforce_max_length(self, parser: &Parser) -> Result<Ident, ParserError> {
+        if self.0.len() > MAX_IDENTIFIER_LENGTH {
+            return parser_err!(
+                parser,
+                parser.peek_pos(),
+                format!("identifier length exceeds {MAX_IDENTIFIER_LENGTH} chars")
+            );
+        }
+
+        Ok(self)
     }
 }
