@@ -5213,7 +5213,17 @@ impl<'a> Parser<'a> {
             // (For example, in `FROM t1 JOIN` the `JOIN` will always be parsed as a keyword,
             // not an alias.)
             Some(Token::Keyword(kw)) if after_as || !is_reserved(kw) => Ok(Some(kw.into())),
-            Some(Token::Ident(id)) => Ok(Some(Ident::new(id))),
+            Some(Token::Ident(id)) => {
+                if id.as_str().len() > MAX_IDENTIFIER_LENGTH {
+                    return parser_err!(
+                        self,
+                        self.peek_pos(),
+                        format!("identifier length exceeds {MAX_IDENTIFIER_LENGTH} chars")
+                    );
+                }
+
+                Ok(Some(Ident::new(id)))
+            }
             not_an_ident => {
                 if after_as {
                     return self.expected(
